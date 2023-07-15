@@ -1,6 +1,5 @@
 const twgl = require('twgl.js');
 
-const TextWrapper = require('./util/text-wrapper');
 const CanvasMeasurementProvider = require('./util/canvas-measurement-provider');
 const Skin = require('./Skin');
 
@@ -22,7 +21,9 @@ const BubbleStyle = {
         BUBBLE_FILL: 'white',
         BUBBLE_STROKE: 'rgba(0, 0, 0, 0.15)',
         TEXT_FILL: '#575E75'
-    }
+    },
+
+    MAX_BUBBLE_SCALE: 10
 };
 
 class TextBubbleSkin extends Skin {
@@ -34,10 +35,7 @@ class TextBubbleSkin extends Skin {
      * @extends Skin
      */
     constructor (id, renderer) {
-        super(id);
-
-        /** @type {RenderWebGL} */
-        this._renderer = renderer;
+        super(id, renderer);
 
         /** @type {HTMLCanvasElement} */
         this._canvas = document.createElement('canvas');
@@ -67,7 +65,7 @@ class TextBubbleSkin extends Skin {
         this._textureDirty = true;
 
         this.measurementProvider = new CanvasMeasurementProvider(this._canvas.getContext('2d'));
-        this.textWrapper = new TextWrapper(this.measurementProvider);
+        this.textWrapper = renderer.createTextWrapper(this.measurementProvider);
 
         this._restyleCanvas();
     }
@@ -107,7 +105,7 @@ class TextBubbleSkin extends Skin {
 
         this._textDirty = true;
         this._textureDirty = true;
-        this.emit(Skin.Events.WasAltered);
+        this.eventSkinAltered();
     }
 
     /**
@@ -253,7 +251,7 @@ class TextBubbleSkin extends Skin {
     getTexture (scale) {
         // The texture only ever gets uniform scale. Take the larger of the two axes.
         const scaleMax = scale ? Math.max(Math.abs(scale[0]), Math.abs(scale[1])) : 100;
-        const requestedScale = scaleMax / 100;
+        const requestedScale = Math.min(BubbleStyle.MAX_BUBBLE_SCALE, scaleMax / 100);
 
         // If we already rendered the text bubble at this scale, we can skip re-rendering it.
         if (this._textureDirty || this._renderedScale !== requestedScale) {

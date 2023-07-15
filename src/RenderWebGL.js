@@ -13,6 +13,8 @@ const SVGSkin = require('./SVGSkin');
 const TextBubbleSkin = require('./TextBubbleSkin');
 const EffectTransform = require('./EffectTransform');
 const log = require('./util/log');
+const Skin = require('./Skin');
+const CanvasMeasurementProvider = require('./util/canvas-measurement-provider');
 
 const __isTouchingDrawablesPoint = twgl.v3.create();
 const __candidatesBounds = new Rectangle();
@@ -87,6 +89,13 @@ const colorMatches = (a, b, offset) => (
  */
 const FENCE_WIDTH = 15;
 
+let _TextWrapper;
+const lazilyLoadTextWrapper = () => {
+    if (!_TextWrapper) {
+        _TextWrapper = require('./util/text-wrapper');
+    }
+    return _TextWrapper;
+};
 
 class RenderWebGL extends EventEmitter {
     /**
@@ -98,7 +107,13 @@ class RenderWebGL extends EventEmitter {
     static isSupported (optCanvas) {
         try {
             // Create the context the same way that the constructor will: attributes may make the difference.
-            return !!RenderWebGL._getContext(optCanvas || document.createElement('canvas'));
+            optCanvas = optCanvas || document.createElement('canvas');
+            const options = {alpha: false, stencil: true, antialias: false};
+            return !!(
+                optCanvas.getContext('webgl', options) ||
+                optCanvas.getContext('experimental-webgl', options) ||
+                optCanvas.getContext('webgl2', options)
+            );
         } catch (e) {
             return false;
         }
@@ -111,7 +126,12 @@ class RenderWebGL extends EventEmitter {
      * @private
      */
     static _getContext (canvas) {
-        const contextAttribs = {alpha: false, stencil: true, antialias: false};
+        const contextAttribs = {
+            alpha: false,
+            stencil: true,
+            antialias: false,
+            powerPreference: RenderWebGL.powerPreference
+        };
         // getWebGLContext = try WebGL 1.0 only
         // getContext = try WebGL 2.0 and if that doesn't work, try WebGL 1.0
         // getWebGLContext || getContext = try WebGL 1.0 and if that doesn't work, try WebGL 2.0
@@ -207,8 +227,17 @@ class RenderWebGL extends EventEmitter {
         this._backgroundColor4f = [0, 0, 0, 1];
 
         /** @type {Uint8ClampedArray} */
+        // ???
         // Don't set this directly-- use setBackgroundColor so it stays in sync with _backgroundColor4f
         this._backgroundColor3b = new Uint8ClampedArray(3);
+
+        this._skinId = null;
+
+        this._highQualityRenderer = false;
+
+        this._offscreenTouching = false;
+
+        this._dirty = true;
 
         this._createGeometry();
 
@@ -222,6 +251,77 @@ class RenderWebGL extends EventEmitter {
         /** @todo disable when no partial transparency? */
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+
+
+
+        /**
+         * Defines if private skins' contents (e.g. webcams) are accessable by projects.
+         * @type {boolean}
+         */
+        this._privateSkinAccessEnabled = true;
+
+        /**
+         * Texture's dimension maximum  (in texels); no hard limit.
+         * @type {number}
+         */
+        this._textureDimensionUpperLimit = 2048;
+
+        /**
+         * Internal's export to use them in externally added extensions.
+         */
+        this.exports = {
+            twgl,
+            Drawable,
+            Skin,
+            BitmapSkin,
+            TextBubbleSkin,
+            PenSkin,
+            SVGSkin,
+            CanvasMeasurementProvider
+        };
+    }
+
+    setHighQualityRenderer (highQualityRendererEnabled) {
+        this._dirty = true;
+        this._highQualityRenderer = highQualityRendererEnabled;
+        this.emit(RenderConstants.Events.HighQualityRendererChanged, highQualityRendererEnabled);
+        this._updateRenderQuality();
+    }
+    _updateRenderQuality () {
+        if (this._skinId !== null) {
+            const skinWithSkinId = this._allSkins[this._skinId];
+            if (skinWithSkinId) {
+                if (this._highQualityRenderer) {
+                    skinWithSkinId.setRenderQuality(this.canvas.width / this._nativeSize[0]);
+                } else {
+                    skinWithSkinId.setRenderQuality(1);
+                }
+            }
+        }
+        for (const drawable of this._allDrawables) {
+            if (drawable) {
+                drawable.setHighQuality(this._highQualityRenderer);
+            }
+        }
+    }
+
+    /**
+     * Configure whether the renderer should let projects access private skins.
+     * @param {boolean} privateSkinAccessEnabled Whether projects can access private skins or not.
+     */
+    setPrivateSkinAccess (privateSkinAccessEnabled) {
+        this._privateSkinAccessEnabled = privateSkinAccessEnabled;
+        this.emit(RenderConstants.Events.PrivateSkinAccessChanged, privateSkinAccessEnabled);
+    }
+
+    /**
+     * Change the default (suggested) maximum texture dimension; should be set before any skins are created.
+     * @param {number} upperLimit New upper limit of texture dimension (in texels).
+     */
+    setTextureDimensionUpperLimit (upperLimit) {
+        const hardwareTextureSizeLimitation = this._gl.getParameter(this._gl.MAX_TEXTURE_SIZE);
+        this._textureDimensionUpperLimit = Math.min(upperLimit, hardwareTextureSizeLimitation);
     }
 
     /**
@@ -256,7 +356,10 @@ class RenderWebGL extends EventEmitter {
             canvas.width = newWidth;
             canvas.height = newHeight;
             // Resizing the canvas causes it to be cleared, so redraw it.
+            this._dirty = true;
             this.draw();
+            
+            this._updateRenderQuality();
         }
 
     }
@@ -269,6 +372,8 @@ class RenderWebGL extends EventEmitter {
      * @param {number} blue The blue component for the background.
      */
     setBackgroundColor (red, green, blue) {
+        this._dirty = true;
+
         this._backgroundColor4f[0] = red;
         this._backgroundColor4f[1] = green;
         this._backgroundColor4f[2] = blue;
@@ -373,6 +478,8 @@ class RenderWebGL extends EventEmitter {
         const skinId = this._nextSkinId++;
         const newSkin = new PenSkin(skinId, this);
         this._allSkins[skinId] = newSkin;
+        this._skinId = skinId;
+        this._updateRenderQuality();
         return skinId;
     }
 
@@ -482,14 +589,35 @@ class RenderWebGL extends EventEmitter {
             return;
         }
         const drawableID = this._nextDrawableId++;
-        const drawable = new Drawable(drawableID);
+        const drawable = new Drawable(drawableID, this);
         this._allDrawables[drawableID] = drawable;
         this._addToDrawList(drawableID, group);
+        drawable.setHighQuality(this._highQualityRenderer);        
 
         drawable.skin = null;
 
         return drawableID;
     }
+
+    /**
+     * @param {CanvasMeasurementProvider} measurementProvider Provider for text measurement.
+     * @returns {TextWrapper} TextWrapper instance.
+     */
+    createTextWrapper (measurementProvider) {
+        return new (lazilyLoadTextWrapper())(measurementProvider);
+    }
+
+    /**
+     * Flag Skin as private.
+     * @param {number} skinID ID of the Skin.
+     */
+    setSkinToPrivate (skinID) {
+        const skinWithSkinId = this._allSkins[skinID];
+        if (!skinWithSkinId) {
+            return;
+        }
+        skinWithSkinId._private = true;
+    }    
 
     /**
      * Set the layer group ordering for the renderer.
@@ -551,6 +679,7 @@ class RenderWebGL extends EventEmitter {
             log.warn('Cannot destroy drawable without known layer group.');
             return;
         }
+        this._dirty = true;
         const drawable = this._allDrawables[drawableID];
         drawable.dispose();
         delete this._allDrawables[drawableID];
@@ -606,6 +735,7 @@ class RenderWebGL extends EventEmitter {
             return;
         }
 
+        this._dirty = true;
         const currentLayerGroup = this._layerGroups[group];
         const startIndex = currentLayerGroup.drawListOffset;
         const endIndex = this._endIndexForKnownLayerGroup(currentLayerGroup);
@@ -645,10 +775,26 @@ class RenderWebGL extends EventEmitter {
         return null;
     }
 
+    eventSkinAltered (alteredSkin) {
+        // ???
+        // This is very hot function.
+        for (let i = 0; i < this._allDrawables.length; i++) {
+            const drawableI = this._allDrawables[i];
+            if (drawableI && drawableI._skin === alteredSkin) {
+                drawableI._eventSkinAltered();
+            }
+        }
+    }
+
     /**
      * Draw all current drawables and present the frame on the canvas.
      */
     draw () {
+        if (!this._dirty) {
+            return;
+        }
+        this._dirty = false;
+
         this._doExitDrawRegion();
 
         const gl = this._gl;
@@ -658,14 +804,17 @@ class RenderWebGL extends EventEmitter {
         gl.clearColor(...this._backgroundColor4f);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
+        const snapshotCallback = this._snapshotCallbacks.length > 0;
         this._drawThese(this._drawList, ShaderManager.DRAW_MODE.default, this._projection, {
             framebufferWidth: gl.canvas.width,
-            framebufferHeight: gl.canvas.height
+            framebufferHeight: gl.canvas.height,
+            isPrivateSkin: snapshotCallback
         });
-        if (this._snapshotCallbacks.length > 0) {
+        if (snapshotCallback) {
             const snapshot = gl.canvas.toDataURL();
             this._snapshotCallbacks.forEach(cb => cb(snapshot));
             this._snapshotCallbacks = [];
+            this._dirty = true;
         }
     }
 
@@ -1055,10 +1204,16 @@ class RenderWebGL extends EventEmitter {
             return false;
         }
         const bounds = this.clientSpaceToScratchBounds(centerX, centerY, touchWidth, touchHeight);
-        const worldPos = twgl.v3.create();
+
+        const drawableFastBounds = drawable.getFastBounds();
+        drawableFastBounds.snapToInt();
+        if (!drawableFastBounds.intersects(bounds)) {
+            return false;
+        }
 
         drawable.updateCPURenderAttributes();
 
+        const worldPos = twgl.v3.create();
         for (worldPos[1] = bounds.bottom; worldPos[1] <= bounds.top; worldPos[1]++) {
             for (worldPos[0] = bounds.left; worldPos[0] <= bounds.right; worldPos[0]++) {
                 if (drawable.isTouching(worldPos)) {
@@ -1096,6 +1251,7 @@ class RenderWebGL extends EventEmitter {
                 const drawableBounds = drawable.getFastBounds();
                 const inRange = bounds.intersects(drawableBounds);
                 if (!inRange) return false;
+                if (drawable.skin instanceof PenSkin) return false;
 
                 drawable.updateCPURenderAttributes();
                 return true;
@@ -1337,6 +1493,9 @@ class RenderWebGL extends EventEmitter {
 
         // Limit queries to the stage size.
         bounds.clamp(this._xLeft, this._xRight, this._yBottom, this._yTop);
+        if (!this._offscreenTouching) {
+            bounds.clamp(this._xLeft, this._xRight, this._yBottom, this._yTop);
+        }
 
         // Use integer coordinates for queries - weird things happen
         // when you provide float width/heights to gl.viewport and projection.
@@ -1347,6 +1506,21 @@ class RenderWebGL extends EventEmitter {
             return null;
         }
         return bounds;
+    }
+
+    _unsnappedTouchingBounds (drawableID) {
+        // ???
+        // _touchingBounds with the snapToInt call removed.
+        const drawableWithDrawableID = this._allDrawables[drawableID];
+        if (!drawableWithDrawableID.skin || !drawableWithDrawableID.skin.getTexture([100, 100])) return null;
+        const fastBounds = drawableWithDrawableID.getFastBounds();
+        if (!this._offscreenTouching) {
+            fastBounds.clamp(this._xLeft, this._xRight, this._yBottom, this._yTop);
+        }
+        if (fastBounds.width === 0 || fastBounds.height === 0) {
+            return null;
+        }
+        return fastBounds;
     }
 
     /**
@@ -1370,6 +1544,7 @@ class RenderWebGL extends EventEmitter {
                 // Text bubbles aren't considered in "touching" queries
                 if (drawable.skin instanceof TextBubbleSkin) continue;
                 if (drawable.skin && drawable._visible) {
+                    if (!this._privateSkinAccessEnabled && drawable.skin._private) continue;
                     // Update the CPU position data
                     drawable.updateCPURenderAttributes();
                     const candidateBounds = drawable.getFastBounds();
@@ -1506,6 +1681,7 @@ class RenderWebGL extends EventEmitter {
         const drawable = this._allDrawables[drawableID];
         if (!drawable) {
             /**
+            //  * !!!
              * @todo(https://github.com/LLK/scratch-vm/issues/2288) fix whatever's wrong in the VM which causes this, then add a warning or throw here.
              * Right now this happens so much on some projects that a warning or exception here can hang the browser.
              */
@@ -1559,6 +1735,7 @@ class RenderWebGL extends EventEmitter {
      * @param {int} penSkinID - the unique ID of a Pen Skin.
      */
     penClear (penSkinID) {
+        this._dirty = true;
         const skin = /** @type {PenSkin} */ this._allSkins[penSkinID];
         skin.clear();
     }
@@ -1571,6 +1748,7 @@ class RenderWebGL extends EventEmitter {
      * @param {number} y - the Y coordinate of the point to draw.
      */
     penPoint (penSkinID, penAttributes, x, y) {
+        this._dirty = true;
         const skin = /** @type {PenSkin} */ this._allSkins[penSkinID];
         skin.drawPoint(penAttributes, x, y);
     }
@@ -1585,6 +1763,7 @@ class RenderWebGL extends EventEmitter {
      * @param {number} y1 - the Y coordinate of the end of the line.
      */
     penLine (penSkinID, penAttributes, x0, y0, x1, y1) {
+        this._dirty = true;
         const skin = /** @type {PenSkin} */ this._allSkins[penSkinID];
         skin.drawLine(penAttributes, x0, y0, x1, y1);
     }
@@ -1595,12 +1774,13 @@ class RenderWebGL extends EventEmitter {
      * @param {int} stampID - the unique ID of the Drawable to use as the stamp.
      */
     penStamp (penSkinID, stampID) {
+        this._dirty = true;
         const stampDrawable = this._allDrawables[stampID];
         if (!stampDrawable) {
             return;
         }
 
-        const bounds = this._touchingBounds(stampID);
+        const bounds = this._unsnappedTouchingBounds(stampID);
         if (!bounds) {
             return;
         }
@@ -1613,16 +1793,34 @@ class RenderWebGL extends EventEmitter {
         twgl.bindFramebufferInfo(gl, skin._framebuffer);
 
         // Limit size of viewport to the bounds around the stamp Drawable and create the projection matrix for the draw.
+        const renderQuality = skin._renderQuality;
+        bounds.left *= renderQuality;
+        bounds.right *= renderQuality;
+        bounds.top *= renderQuality;
+        bounds.bottom *= renderQuality;
+        bounds.snapToInt();
         gl.viewport(
-            (this._nativeSize[0] * 0.5) + bounds.left,
-            (this._nativeSize[1] * 0.5) - bounds.top,
+            (this._nativeSize[0] * 0.5 * renderQuality) + bounds.left,
+            (this._nativeSize[1] * 0.5 * renderQuality) - bounds.top,
             bounds.width,
             bounds.height
         );
-        const projection = twgl.m4.ortho(bounds.left, bounds.right, bounds.top, bounds.bottom, -1, 1);
+        const projection = twgl.m4.ortho(
+            // Convert snapped "screen-space" back to "stage-space" for rendering.
+            bounds.left / renderQuality,
+            bounds.right / renderQuality,
+            bounds.top / renderQuality,
+            bounds.bottom / renderQuality,
+            -1,
+            1
+        );
 
         // Draw the stamped sprite onto the PenSkin's framebuffer.
-        this._drawThese([stampID], ShaderManager.DRAW_MODE.default, projection, {ignoreVisibility: true});
+        this._drawThese([stampID], ShaderManager.DRAW_MODE.default, projection, {
+            ignoreVisibility: true,
+            framebufferWidth: this._nativeSize[0] * renderQuality,
+            framebufferHeight: this._nativeSize[1] * renderQuality
+        });
         skin._silhouetteDirty = true;
     }
 
@@ -1670,6 +1868,7 @@ class RenderWebGL extends EventEmitter {
      * @private
      */
     onNativeSizeChanged (event) {
+        this._dirty = true;
         const [width, height] = event.newSize;
 
         const gl = this._gl;
@@ -1739,6 +1938,7 @@ class RenderWebGL extends EventEmitter {
      * @param {boolean} opts.ignoreVisibility Draw all, despite visibility (e.g. stamping, touching color)
      * @param {int} opts.framebufferWidth The width of the framebuffer being drawn onto. Defaults to "native" width
      * @param {int} opts.framebufferHeight The height of the framebuffer being drawn onto. Defaults to "native" height
+     * @param {boolean} opts.isPrivateSkin  Draw no Skins flagged as a private Skin.
      * @private
      */
     _drawThese (drawables, drawMode, projection, opts = {}) {
@@ -1764,6 +1964,9 @@ class RenderWebGL extends EventEmitter {
             // Hidden drawables (e.g., by a "hide" block) are not drawn unless
             // the ignoreVisibility flag is used (e.g. for stamping or touchingColor).
             if (!drawable.getVisible() && !opts.ignoreVisibility) continue;
+
+            // Skip private skins, if requested.
+            if (opts.isPrivateSkin && drawable.skin._private) continue;
 
             // drawableScale is the "framebuffer-pixel-space" scale of the drawable, as percentages of the drawable's
             // "native size" (so 100 = same as skin's "native size", 200 = twice "native size").
@@ -1998,6 +2201,7 @@ class RenderWebGL extends EventEmitter {
      * @param {snapshotCallback} callback Function called in the next frame with the snapshot data
      */
     requestSnapshot (callback) {
+        this._dirty = true;
         this._snapshotCallbacks.push(callback);
     }
 }
@@ -2025,5 +2229,12 @@ RenderWebGL.UseGpuModes = {
      */
     ForceCPU: 'ForceCPU'
 };
+
+/**
+ * WebGL powerPreference: Utilized for future instances of RenderWebGL.
+ * A renderer's power preference setting can't be changed after the instantiation.
+ * @type {'default'|'high-performance'|'low-power'}
+ */
+RenderWebGL.powerPreference = 'default';
 
 module.exports = RenderWebGL;

@@ -1,18 +1,18 @@
-const EventEmitter = require('events');
-
 const twgl = require('twgl.js');
 
 const RenderConstants = require('./RenderConstants');
 const Silhouette = require('./Silhouette');
 
-class Skin extends EventEmitter {
+class Skin {
     /**
      * Create a Skin, which stores and/or generates textures for use in rendering.
      * @param {int} id - The unique ID for this Skin.
+     * @param {RenderWebGL} renderer - The renderer utilizing the Skin.
      * @constructor
      */
-    constructor (id) {
-        super();
+    constructor (id, renderer) {
+        /** @type {RenderWebGL} */
+        this._renderer = renderer;
 
         /** @type {int} */
         this._id = id;
@@ -45,11 +45,11 @@ class Skin extends EventEmitter {
 
         /**
          * A silhouette to store touching data, skins are responsible for keeping it up to date.
-         * @private
+         * @protected
          */
         this._silhouette = new Silhouette();
 
-        this.setMaxListeners(RenderConstants.SKIN_SHARE_SOFT_LIMIT);
+        this._private = false;        
     }
 
     /**
@@ -133,12 +133,17 @@ class Skin extends EventEmitter {
         return this._uniforms;
     }
 
+    eventSkinAltered () {
+        this._renderer.eventSkinAltered(this);
+    }    
+    
     /**
      * If the skin defers silhouette operations until the last possible minute,
      * this will be called before isTouching uses the silhouette.
-     * @abstract
      */
-    updateSilhouette () {}
+    updateSilhouette () {
+        this._silhouette.unlazy();
+    }
 
     /**
      * Set this skin's texture to the given image.
@@ -189,7 +194,7 @@ class Skin extends EventEmitter {
         this._rotationCenter[1] = 0;
 
         this._silhouette.update(this._emptyImageData);
-        this.emit(Skin.Events.WasAltered);
+        this.eventSkinAltered();
     }
 
     /**
@@ -219,17 +224,5 @@ class Skin extends EventEmitter {
     }
 
 }
-
-/**
- * These are the events which can be emitted by instances of this class.
- * @enum {string}
- */
-Skin.Events = {
-    /**
-     * Emitted when anything about the Skin has been altered, such as the appearance or rotation center.
-     * @event Skin.event:WasAltered
-     */
-    WasAltered: 'WasAltered'
-};
 
 module.exports = Skin;

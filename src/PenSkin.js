@@ -29,7 +29,13 @@ const DefaultPenAttributes = {
  * @type {FloatArray}
  */
 const __premultipliedColor = [0, 0, 0, 0];
+        // Array of 32-bit floating point numbers.
 
+// Conversion and scaling of an Float32Array to Int16Array: Scaling with range 1 to -1 in Float32Array --> becomes 32767 and -32768 in Int16Array (source: https://stackoverflow.com/questions/25839216/convert-float32array-to-int16array)
+// Contant for flushing if buffer would overflow. 
+// Detecting size of a_color with .length is very slow in some browsers. Performance improvement: Comparing to a constant (ARRAY_BUFFER_POINT_COLOR).
+const ARRAY_BUFFER_POINT_COLOR = 65534;
+const ARRAY_BUFFER_POSTION_DIMENSION = 32767;
 class PenSkin extends Skin {
     /**
      * Create a Skin which implements a Scratch pen layer.
@@ -74,24 +80,64 @@ class PenSkin extends Skin {
             exit: () => this._exitUsePenBuffer()
         };
 
+        this._renderQuality = 1;
+
+        this._nativeSize = renderer.getNativeSize();
+
+        this._resetAttributeIndexes();
+        this.a_color = new Float32Array(ARRAY_BUFFER_POINT_COLOR);
+        this.a_point = new Float32Array(ARRAY_BUFFER_POINT_COLOR);
+        this.a_position = new Float32Array(ARRAY_BUFFER_POSTION_DIMENSION);
+        this.a_dimension = new Float32Array(ARRAY_BUFFER_POSTION_DIMENSION);
+        for (let i = 0; i < this.a_position.length; i += 12) {
+            this.a_position[i + 0] = 1;
+            this.a_position[i + 1] = 0;
+            this.a_position[i + 2] = 0;
+            this.a_position[i + 3] = 0;
+            this.a_position[i + 4] = 1;
+            this.a_position[i + 5] = 1;
+            this.a_position[i + 6] = 1;
+            this.a_position[i + 7] = 1;
+            this.a_position[i + 8] = 0;
+            this.a_position[i + 9] = 0;
+            this.a_position[i + 10] = 0;
+            this.a_position[i + 11] = 1;
+        }
+
         /** @type {twgl.BufferInfo} */
         this._lineBufferInfo = twgl.createBufferInfoFromArrays(this._renderer.gl, {
+            a_color: {
+                numComponents: 4,
+                drawType: this._renderer.gl.STREAM_DRAW,
+                data: this.a_color
+            },
+            a_point: {
+                numComponents: 4,
+                drawType: this._renderer.gl.STREAM_DRAW,
+                data: this.a_point
+            },
             a_position: {
                 numComponents: 2,
-                data: [
-                    1, 0,
-                    0, 0,
-                    1, 1,
-                    1, 1,
-                    0, 0,
-                    0, 1
-                ]
+                data: this.a_position
+            },
+            a_dimension: {
+                numComponents: 2,
+                drawType: this._renderer.gl.STREAM_DRAW,
+                data: this.a_dimension
             }
         });
 
+        // ???
         const NO_EFFECTS = 0;
         /** @type {twgl.ProgramInfo} */
         this._lineShader = this._renderer._shaderManager.getShader(ShaderManager.DRAW_MODE.line, NO_EFFECTS);
+
+        this._drawingShader = this._renderer._shaderManager.getShader(ShaderManager.DRAW_MODE.default, NO_EFFECTS);
+        /** @type {object} */
+        this._drawingBufferDrawRegionId = {
+            enter: () => this._enterDrawingBuffer(),
+            exit: () => this._exitDrawingBuffer()
+        };        
 
         this.onNativeSizeChanged = this.onNativeSizeChanged.bind(this);
         this._renderer.on(RenderConstants.Events.NativeSizeChanged, this.onNativeSizeChanged);
@@ -113,7 +159,7 @@ class PenSkin extends Skin {
      * @return {Array<number>} the "native" size, in texels, of this skin. [width, height]
      */
     get size () {
-        return this._size;
+        return this._nativeSize;
     }
 
     useNearest (scale) {
@@ -182,6 +228,8 @@ class PenSkin extends Skin {
      * Prepare to draw lines in the _lineOnBufferDrawRegionId region.
      */
     _enterDrawLineOnBuffer () {
+        this._resetAttributeIndexes();
+ 
         const gl = this._renderer.gl;
 
         twgl.bindFramebufferInfo(gl, this._framebuffer);
@@ -204,6 +252,10 @@ class PenSkin extends Skin {
      * Return to a base state from _lineOnBufferDrawRegionId.
      */
     _exitDrawLineOnBuffer () {
+        if (this.a_indexColor) {
+            this._flushLines();
+        }
+
         const gl = this._renderer.gl;
 
         twgl.bindFramebufferInfo(gl, null);
@@ -223,6 +275,47 @@ class PenSkin extends Skin {
         twgl.bindFramebufferInfo(this._renderer.gl, null);
     }
 
+    _enterDrawingBuffer () {
+        this._enterUsePenBuffer();
+        const gl = this._renderer.gl;
+        gl.viewport(0, 0, this._size[0], this._size[1]);
+        gl.useProgram(this._drawingShader.program);
+        twgl.setBuffersAndAttributes(gl, this._drawingShader, this._renderer._bufferInfo);
+    }
+    _exitDrawingBuffer () {
+        this._exitUsePenBuffer();
+    }
+    _drawingBuffer (buffer) {
+        this._renderer.enterDrawRegion(this._drawingBufferDrawRegionId);
+        const gl = this._renderer.gl;
+        const width = this._size[0];
+        const height = this._size[1];
+
+        const uniforms = {
+            u_skin: buffer,
+            u_projectionMatrix: twgl.m4.ortho(
+                width / 2,
+                width / -2,
+                height / -2,
+                height / 2,
+                -1,
+                1,
+                twgl.m4.identity()
+            ),
+            u_modelMatrix: twgl.m4.scaling(twgl.v3.create(
+                width,
+                height,
+                0
+            ), twgl.m4.identity())
+        };
+
+        twgl.setTextureParameters(gl, buffer, {
+            minMag: gl.NEAREST
+        });
+        twgl.setUniforms(this._drawingShader, uniforms);
+        twgl.drawBufferInfo(gl, this._renderer._bufferInfo, gl.TRIANGLES);
+    }
+
     /**
      * Draw a line on the framebuffer.
      * Note that the point coordinates are in the following coordinate space:
@@ -234,11 +327,12 @@ class PenSkin extends Skin {
      * @param {number} y1 - the Y coordinate of the end of the line.
      */
     _drawLineOnBuffer (penAttributes, x0, y0, x1, y1) {
-        const gl = this._renderer.gl;
-
-        const currentShader = this._lineShader;
 
         this._renderer.enterDrawRegion(this._lineOnBufferDrawRegionId);
+
+        if (this.a_indexColor + 24 > ARRAY_BUFFER_POINT_COLOR) {
+            this._flushLines();
+        }
 
         // Premultiply pen color by pen transparency
         const penColor = penAttributes.color4f || DefaultPenAttributes.color4f;
@@ -247,6 +341,12 @@ class PenSkin extends Skin {
         __premultipliedColor[2] = penColor[2] * penColor[3];
         __premultipliedColor[3] = penColor[3];
 
+        x0 *= this._renderQuality;
+        y0 *= this._renderQuality;
+        x1 *= this._renderQuality;
+        y1 *= this._renderQuality;
+
+        // ???
         // Fun fact: Doing this calculation in the shader has the potential to overflow the floating-point range.
         // 'mediump' precision is only required to have a range up to 2^14 (16384), so any lines longer than 2^7 (128)
         // can overflow that, because you're squaring the operands, and they could end up as "infinity".
@@ -256,16 +356,91 @@ class PenSkin extends Skin {
         const lineDiffY = y1 - y0;
         const lineLength = Math.sqrt((lineDiffX * lineDiffX) + (lineDiffY * lineDiffY));
 
-        const uniforms = {
-            u_lineColor: __premultipliedColor,
-            u_lineThickness: penAttributes.diameter || DefaultPenAttributes.diameter,
-            u_lineLength: lineLength,
-            u_penPoints: [x0, -y0, lineDiffX, -lineDiffY]
-        };
+        const lineThickness = (penAttributes.diameter || DefaultPenAttributes.diameter) * this._renderQuality;
+        for (let i = 0; i < 6; i++) {
+            this.a_color[this.a_indexColor] = __premultipliedColor[0];
+            this.a_indexColor++;
+            this.a_color[this.a_indexColor] = __premultipliedColor[1];
+            this.a_indexColor++;
+            this.a_color[this.a_indexColor] = __premultipliedColor[2];
+            this.a_indexColor++;
+            this.a_color[this.a_indexColor] = __premultipliedColor[3];
+            this.a_indexColor++;
 
-        twgl.setUniforms(currentShader, uniforms);
+            this.a_dimension[this.a_indexDimension] = lineThickness;
+            this.a_indexDimension++;
 
-        twgl.drawBufferInfo(gl, this._lineBufferInfo, gl.TRIANGLES);
+            this.a_dimension[this.a_indexDimension] = lineLength;
+            this.a_indexDimension++;
+
+            this.a_point[this.a_IndexPoint] = x0;
+            this.a_IndexPoint++;
+            this.a_point[this.a_IndexPoint] = -y0;
+            this.a_IndexPoint++;
+            this.a_point[this.a_IndexPoint] = lineDiffX;
+            this.a_IndexPoint++;
+            this.a_point[this.a_IndexPoint] = -lineDiffY;
+            this.a_IndexPoint++;
+        }
+    }
+
+        _resetAttributeIndexes () {
+            this.a_indexColor = 0;
+            this.a_indexDimension = 0;
+            this.a_IndexPoint = 0;
+        }
+    
+        _flushLines () {
+            const gl = this._renderer.gl;
+    
+            const currentShader = this._lineShader;
+            
+            // !!
+            // If only a small amount of data needs to be uploaded, only upload part of the data.
+            // todo: need to see if this helps and fine tune this number
+            if (this.a_indexColor < 1000) {
+                twgl.setAttribInfoBufferFromArray(
+                    gl,
+                    this._lineBufferInfo.attribs.a_color,
+                    new Float32Array(this.a_color.buffer, 0, this.a_indexColor),
+                    0
+                );
+                twgl.setAttribInfoBufferFromArray(
+                    gl,
+                    this._lineBufferInfo.attribs.a_point,
+                    new Float32Array(this.a_point.buffer, 0, this.a_IndexPoint),
+                    0
+                );
+                twgl.setAttribInfoBufferFromArray(
+                    gl,
+                    this._lineBufferInfo.attribs.a_dimension,
+                    new Float32Array(this.a_dimension.buffer, 0, this.a_indexDimension),
+                    0
+                );
+            } else {
+                twgl.setAttribInfoBufferFromArray(
+                    gl,
+                    this._lineBufferInfo.attribs.a_color,
+                    this.a_color
+                );
+                twgl.setAttribInfoBufferFromArray(
+                    gl,
+                    this._lineBufferInfo.attribs.a_point,
+                    this.a_point
+                );
+                twgl.setAttribInfoBufferFromArray(
+                    gl,
+                    this._lineBufferInfo.attribs.a_dimension,
+                    this.a_dimension
+                );
+            }
+            // !!!            
+            // todo: if we skip twgl and do all this buffer stuff ourselves, we can skip some unneeded gl calls
+            twgl.setBuffersAndAttributes(gl, currentShader, this._lineBufferInfo);
+
+            twgl.drawBufferInfo(gl, this._lineBufferInfo, gl.TRIANGLES, this.a_dimension / 2);
+
+            this._resetAttributeIndexes();
 
         this._silhouetteDirty = true;
     }
@@ -275,22 +450,34 @@ class PenSkin extends Skin {
      * @param {object} event - The change event.
      */
     onNativeSizeChanged (event) {
-        this._setCanvasSize(event.newSize);
+        this._nativeSize = event.newSize;
+        this._setCanvasSize([
+            event.newSize[0] * this._renderQuality,
+            event.newSize[1] * this._renderQuality
+        ]);
+        this.eventSkinAltered();
     }
 
-    /**
+    /** 
      * Set the size of the pen canvas.
-     * @param {Array<int>} canvasSize - the new width and height for the canvas.
+     * @param {Array<int>} canvasDimensions - the new width and height for the canvas.
      * @private
      */
-    _setCanvasSize (canvasSize) {
-        const [width, height] = canvasSize;
+    _setCanvasSize (canvasDimensions) {
+        const [width, height] = canvasDimensions;
 
-        this._size = canvasSize;
-        this._rotationCenter[0] = width / 2;
-        this._rotationCenter[1] = height / 2;
+        if (this._size && this._size[0] === width && this._size[1] === height) {
+            return;
+        }        
+
+        this._size = canvasDimensions;
+        // tw: use native size for Drawable positioning logic
+        this._rotationCenter[0] = this._nativeSize[0] / 2;
+        this._rotationCenter[1] = this._nativeSize[1] / 2;
 
         const gl = this._renderer.gl;
+
+        const previousTexture = this._texture;
 
         this._texture = twgl.createTexture(
             gl,
@@ -309,8 +496,9 @@ class PenSkin extends Skin {
                 attachment: this._texture
             }
         ];
+        
         if (this._framebuffer) {
-            twgl.resizeFramebufferInfo(gl, this._framebuffer, attachments, width, height);
+            this._framebuffer = twgl.createFramebufferInfo(gl, attachments, width, height);
         } else {
             this._framebuffer = twgl.createFramebufferInfo(gl, attachments, width, height);
         }
@@ -318,10 +506,22 @@ class PenSkin extends Skin {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
+        if (previousTexture) {
+            this._drawingBuffer(previousTexture);
+        }
+
         this._silhouettePixels = new Uint8Array(Math.floor(width * height * 4));
         this._silhouetteImageData = new ImageData(width, height);
 
         this._silhouetteDirty = true;
+    }
+
+    setRenderQuality (renderQuality) {
+        if (this._renderQuality === renderQuality) {
+            return;
+        }
+        this._renderQuality = renderQuality;
+        this._setCanvasSize([Math.round(this._nativeSize[0] * renderQuality), Math.round(this._nativeSize[1] * renderQuality)]);
     }
 
     /**

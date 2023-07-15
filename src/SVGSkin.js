@@ -4,8 +4,6 @@ const Skin = require('./Skin');
 const {loadSvgString, serializeSvgToString} = require('scratch-svg-renderer');
 const ShaderManager = require('./ShaderManager');
 
-const MAX_TEXTURE_DIMENSION = 2048;
-
 /**
  * All scaled renderings of the SVG are stored in an array. The 1.0 scale of
  * the SVG is stored at the 8th index. The smallest possible 1 / 256 scale
@@ -23,10 +21,8 @@ class SVGSkin extends Skin {
      * @extends Skin
      */
     constructor (id, renderer) {
-        super(id);
 
-        /** @type {RenderWebGL} */
-        this._renderer = renderer;
+        super(id, renderer);
 
         /** @type {HTMLImageElement} */
         this._svgImage = document.createElement('img');
@@ -106,6 +102,11 @@ class SVGSkin extends Skin {
      * @return {SVGMIP} An object that handles creating and updating SVG textures.
      */
     createMIP (scale) {
+        const isNewMipScaleLargestMipScale = this._largestMIPScale < scale;
+        if (!isNewMipScaleLargestMipScale) {
+            this._silhouette.unlazy();
+        }
+
         const [width, height] = this._size;
         this._canvas.width = width * scale;
         this._canvas.height = height * scale;
@@ -123,10 +124,9 @@ class SVGSkin extends Skin {
         this._context.setTransform(scale, 0, 0, scale, 0, 0);
         this._context.drawImage(this._svgImage, 0, 0);
 
-        // Pull out the ImageData from the canvas. ImageData speeds up
-        // updating Silhouette and is better handled by more browsers in
-        // regards to memory.
-        const textureData = this._context.getImageData(0, 0, this._canvas.width, this._canvas.height);
+        // Pull out the ImageData from the canvas. ImageData speeds up updating Silhouette and is better handled by more browsers in regards to memory.
+        // Optimization: Slow reading of image data from <canvas>; causes animation stuttering --> use the canvas directly.
+        const textureData = this._canvas;
 
         const textureOptions = {
             auto: false,
@@ -138,7 +138,7 @@ class SVGSkin extends Skin {
         const mip = twgl.createTexture(this._renderer.gl, textureOptions);
 
         // Check if this is the largest MIP created so far. Currently, silhouettes only get scaled up.
-        if (this._largestMIPScale < scale) {
+        if (isNewMipScaleLargestMipScale) {
             this._silhouette.update(textureData);
             this._largestMIPScale = scale;
         }
@@ -149,6 +149,7 @@ class SVGSkin extends Skin {
     updateSilhouette (scale = [100, 100]) {
         // Ensure a silhouette exists.
         this.getTexture(scale);
+        this._silhouette.unlazy();
     }
 
     /**
@@ -213,8 +214,9 @@ class SVGSkin extends Skin {
             }
 
             const maxDimension = Math.ceil(Math.max(width, height));
+            const textureDimensionUpperLimit = this._renderer._textureDimensionUpperLimit;
             let testScale = 2;
-            for (testScale; maxDimension * testScale <= MAX_TEXTURE_DIMENSION; testScale *= 2) {
+            for (testScale; maxDimension * testScale <= textureDimensionUpperLimit; testScale *= 2) {
                 this._maxTextureScale = testScale;
             }
 
@@ -228,7 +230,7 @@ class SVGSkin extends Skin {
 
             this._svgImageLoaded = true;
 
-            this.emit(Skin.Events.WasAltered);
+            this.eventSkinAltered();
         };
 
         this._svgImage.src = `data:image/svg+xml;utf8,${encodeURIComponent(svgText)}`;

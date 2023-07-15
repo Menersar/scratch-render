@@ -3,7 +3,6 @@ const twgl = require('twgl.js');
 const Rectangle = require('./Rectangle');
 const RenderConstants = require('./RenderConstants');
 const ShaderManager = require('./ShaderManager');
-const Skin = require('./Skin');
 const EffectTransform = require('./EffectTransform');
 const log = require('./util/log');
 
@@ -57,13 +56,15 @@ const getLocalPosition = (drawable, vec) => {
 class Drawable {
     /**
      * An object which can be drawn by the renderer.
-     * @todo double-buffer all rendering state (position, skin, effects, etc.)
+     * @todo double-buffer all rendering state (position, skin, effects, etc.).
      * @param {!int} id - This Drawable's unique ID.
+     * @param {!RenderWebGL} renderer - The renderer creating this Drawable.
      * @constructor
      */
-    constructor (id) {
+    constructor (id, renderer) {
         /** @type {!int} */
         this._id = id;
+        this._renderer = renderer;
 
         /**
          * The uniforms to be used by the vertex and pixel shaders.
@@ -123,9 +124,15 @@ class Drawable {
         this._transformedHullPoints = null;
         this._transformedHullDirty = true;
 
-        this._skinWasAltered = this._skinWasAltered.bind(this);
+        this._eventSkinAltered = this._eventSkinAltered.bind(this);
 
         this.isTouching = this._isTouchingNever;
+
+        this._highQualityEnabled = false;
+    }
+
+    setHighQuality (highQualityEnabled) {
+        this._highQualityEnabled = highQualityEnabled;
     }
 
     /**
@@ -165,14 +172,8 @@ class Drawable {
      */
     set skin (newSkin) {
         if (this._skin !== newSkin) {
-            if (this._skin) {
-                this._skin.removeListener(Skin.Events.WasAltered, this._skinWasAltered);
-            }
             this._skin = newSkin;
-            if (this._skin) {
-                this._skin.addListener(Skin.Events.WasAltered, this._skinWasAltered);
-            }
-            this._skinWasAltered();
+            this._eventSkinAltered();
         }
     }
 
@@ -207,8 +208,14 @@ class Drawable {
     updatePosition (position) {
         if (this._position[0] !== position[0] ||
             this._position[1] !== position[1]) {
-            this._position[0] = Math.round(position[0]);
-            this._position[1] = Math.round(position[1]);
+            if (this._highQualityEnabled) {
+                this._position[0] = position[0];
+                this._position[1] = position[1];
+            } else {
+                this._position[0] = Math.round(position[0]);
+                this._position[1] = Math.round(position[1]);
+            }
+            this._renderer.dirty = true;
             this.setTransformDirty();
         }
     }
@@ -220,6 +227,7 @@ class Drawable {
     updateDirection (direction) {
         if (this._direction !== direction) {
             this._direction = direction;
+            this._renderer.dirty = true;
             this._rotationTransformDirty = true;
             this.setTransformDirty();
         }
@@ -234,6 +242,7 @@ class Drawable {
             this._scale[1] !== scale[1]) {
             this._scale[0] = scale[0];
             this._scale[1] = scale[1];
+            this._renderer.dirty = true;
             this._rotationCenterDirty = true;
             this._skinScaleDirty = true;
             this.setTransformDirty();
@@ -247,6 +256,7 @@ class Drawable {
     updateVisible (visible) {
         if (this._visible !== visible) {
             this._visible = visible;
+            this._renderer.dirty = true;
             this.setConvexHullDirty();
         }
     }
@@ -257,6 +267,7 @@ class Drawable {
      * @param {number} rawValue A new effect value.
      */
     updateEffect (effectName, rawValue) {
+        this._renderer.dirty = true;
         const effectInfo = ShaderManager.EFFECT_INFO[effectName];
         if (rawValue) {
             this.enabledEffects |= effectInfo.mask;
@@ -659,9 +670,9 @@ class Drawable {
 
     /**
      * Respond to an internal change in the current Skin.
-     * @private
      */
-    _skinWasAltered () {
+    _eventSkinAltered () {
+        this._renderer.dirty = true;
         this._rotationCenterDirty = true;
         this._skinScaleDirty = true;
         this.setConvexHullDirty();

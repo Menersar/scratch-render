@@ -7,16 +7,13 @@ class BitmapSkin extends Skin {
      * Create a new Bitmap Skin.
      * @extends Skin
      * @param {!int} id - The ID for this Skin.
-     * @param {!RenderWebGL} renderer - The renderer which will use this skin.
+     * @param {!RenderWebGL} renderer - The renderer using this Skin.
      */
     constructor (id, renderer) {
-        super(id);
+        super(id, renderer);
 
         /** @type {!int} */
         this._costumeResolution = 1;
-
-        /** @type {!RenderWebGL} */
-        this._renderer = renderer;
 
         /** @type {Array<int>} */
         this._textureSize = [0, 0];
@@ -68,7 +65,7 @@ class BitmapSkin extends Skin {
         // Silhouette and is better handled by more browsers in regards to
         // memory.
         let textureData = bitmapData;
-        if (bitmapData instanceof HTMLCanvasElement) {
+        if (bitmapData instanceof HTMLCanvasElement && bitmapData.reusable !== false) {
             // Given a HTMLCanvasElement get the image data to pass to webgl and
             // Silhouette.
             const context = bitmapData.getContext('2d');
@@ -94,7 +91,7 @@ class BitmapSkin extends Skin {
         this._rotationCenter[0] = rotationCenter[0];
         this._rotationCenter[1] = rotationCenter[1];
 
-        this.emit(Skin.Events.WasAltered);
+        this.eventSkinAltered();
     }
 
     /**

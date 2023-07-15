@@ -118,6 +118,8 @@ class Silhouette {
         // Point `_getColor` to the version of the function that multiplies.
         this._getColor = getColor4b;
 
+        this._lazyData = null;
+
         this.colorAtNearest = this.colorAtLinear = (_, dst) => dst.fill(0);
     }
 
@@ -134,20 +136,18 @@ class Silhouette {
             imageData = bitmapData;
             this._width = bitmapData.width;
             this._height = bitmapData.height;
+            this._lazyData = null;
+            this._colorData = imageData.data;
         } else {
-            // Draw about anything else to our update canvas and poll image data
-            // from that.
-            const canvas = Silhouette._updateCanvas();
-            const width = this._width = canvas.width = bitmapData.width;
-            const height = this._height = canvas.height = bitmapData.height;
-            const ctx = canvas.getContext('2d');
-
-            if (!(width && height)) {
-                return;
+            // Don't draw anything else to our update canvas and poll image data from that now (since it is likely not needed here).
+            // Lazy image data reading (when necessary) to save memory and CPU time.
+            this._width = bitmapData.width;
+            this._height = bitmapData.height;
+            if (!(this._width && this._height)) {
+                return; // !!! Strange: Returning here before updating anything else, (from scratchfoundation/scratch-render).
             }
-            ctx.clearRect(0, 0, width, height);
-            ctx.drawImage(bitmapData, 0, 0, width, height);
-            imageData = ctx.getImageData(0, 0, width, height);
+            this._lazyData = bitmapData;
+            this._colorData = null;
         }
 
         if (isPremultiplied) {
@@ -156,11 +156,32 @@ class Silhouette {
             this._getColor = getColor4b;
         }
 
-        this._colorData = imageData.data;
         // delete our custom overriden "uninitalized" color functions
         // let the prototype work for itself
         delete this.colorAtNearest;
         delete this.colorAtLinear;
+    }
+
+    unlazy () {
+        if (!this._lazyData) {
+            return;
+        }
+
+        const lazyDataWidth = this._lazyData.width;
+        const lazyDataHeight = this._lazyData.height;
+        if (lazyDataWidth && lazyDataHeight) {
+            const canvas = Silhouette._updateCanvas();
+            canvas.width = lazyDataWidth;
+            canvas.height = lazyDataHeight;
+            const ctx = canvas.getContext('2d');
+
+            ctx.clearRect(0, 0, lazyDataWidth, lazyDataHeight);
+            ctx.drawImage(this._lazyData, 0, 0, lazyDataWidth, lazyDataHeight);
+            const lazyDataImageData = ctx.getImageData(0, 0, lazyDataWidth, lazyDataHeight);
+            this._colorData = lazyDataImageData.data;
+        }
+
+        this._lazyData = null;
     }
 
     /**
