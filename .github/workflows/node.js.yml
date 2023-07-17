@@ -1,8 +1,8 @@
 name: Node.js CI
 
 on:
-  push:
-    branches: [ sidekick ]
+#   push:
+#     branches: [ sidekick ]
   pull_request:
     branches: [ sidekick ]
 
