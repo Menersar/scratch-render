@@ -215,7 +215,7 @@ class Drawable {
                 this._position[0] = Math.round(position[0]);
                 this._position[1] = Math.round(position[1]);
             }
-            this._renderer.dirty = true;
+            this._renderer._dirty = true;
             this.setTransformDirty();
         }
     }
@@ -227,7 +227,7 @@ class Drawable {
     updateDirection (direction) {
         if (this._direction !== direction) {
             this._direction = direction;
-            this._renderer.dirty = true;
+            this._renderer._dirty = true;
             this._rotationTransformDirty = true;
             this.setTransformDirty();
         }
@@ -242,7 +242,7 @@ class Drawable {
             this._scale[1] !== scale[1]) {
             this._scale[0] = scale[0];
             this._scale[1] = scale[1];
-            this._renderer.dirty = true;
+            this._renderer._dirty = true;
             this._rotationCenterDirty = true;
             this._skinScaleDirty = true;
             this.setTransformDirty();
@@ -256,7 +256,7 @@ class Drawable {
     updateVisible (visible) {
         if (this._visible !== visible) {
             this._visible = visible;
-            this._renderer.dirty = true;
+            this._renderer._dirty = true;
             this.setConvexHullDirty();
         }
     }
@@ -267,7 +267,7 @@ class Drawable {
      * @param {number} rawValue A new effect value.
      */
     updateEffect (effectName, rawValue) {
-        this._renderer.dirty = true;
+        this._renderer._dirty = true;
         const effectInfo = ShaderManager.EFFECT_INFO[effectName];
         if (rawValue) {
             this.enabledEffects |= effectInfo.mask;
@@ -672,7 +672,7 @@ class Drawable {
      * Respond to an internal change in the current Skin.
      */
     _eventSkinAltered () {
-        this._renderer.dirty = true;
+        this._renderer._dirty = true;
         this._rotationCenterDirty = true;
         this._skinScaleDirty = true;
         this.setConvexHullDirty();
