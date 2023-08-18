@@ -24,6 +24,7 @@ const __blendColor = new Uint8ClampedArray(4);
 
 // More pixels than this and we give up to the GPU and take the cost of readPixels
 // Width * Height * Number of drawables at location
+// ??? '4e4'? !!!
 const __cpuTouchingColorPixelCount = 4e4;
 
 /**
@@ -231,13 +232,21 @@ class RenderWebGL extends EventEmitter {
         // Don't set this directly-- use setBackgroundColor so it stays in sync with _backgroundColor4f
         this._backgroundColor3b = new Uint8ClampedArray(3);
 
-        this._skinId = null;
+        // !!! CHANGE !!!
+        // this._skinId = null;
+        this._penSkinId = null;
 
-        this._highQualityRenderer = false;
+        // !!! CHANGE !!!
+        // this._highQualityRenderer = false;
+        this.useHighQualityRender = false;
 
-        this._offscreenTouching = false;
+        // !!! CHANGE !!!
+        // this._offscreenTouching = false;
+        this.offscreenTouching = false;
 
-        this._dirty = true;
+        // !!! CHANGE !!!
+        // this._dirty = true;
+        this.dirty = true;
 
         this._createGeometry();
 
@@ -259,13 +268,17 @@ class RenderWebGL extends EventEmitter {
          * Defines if private skins' contents (e.g. webcams) are accessable by projects.
          * @type {boolean}
          */
-        this._privateSkinAccessEnabled = true;
+        // !!! CHANGE !!!
+        // this._privateSkinAccessEnabled = true;
+        this.allowPrivateSkinAccess = true;
 
         /**
          * Texture's dimension maximum  (in texels); no hard limit.
          * @type {number}
          */
-        this._textureDimensionUpperLimit = 2048;
+        // !!! CHANGE !!!
+        // this._textureDimensionUpperLimit = 2048;
+        this.maxTextureDimension = 2048;
 
         /**
          * Internal's export to use them in externally added extensions.
@@ -282,17 +295,25 @@ class RenderWebGL extends EventEmitter {
         };
     }
 
-    setHighQualityRenderer (highQualityRendererEnabled) {
-        this._dirty = true;
-        this._highQualityRenderer = highQualityRendererEnabled;
-        this.emit(RenderConstants.Events.HighQualityRendererChanged, highQualityRendererEnabled);
+    // !!! CHANGE !!!
+    // setHighQualityRenderer (highQualityRendererEnabled) {
+    setUseHighQualityRender (enabled) {
+        // this._dirty = true;
+        this.dirty = true;
+        // this._highQualityRenderer = highQualityRendererEnabled;
+        this.useHighQualityRender = enabled;
+        // this.emit(RenderConstants.Events.HighQualityRendererChanged, enabled);
+        this.emit(RenderConstants.Events.UseHighQualityRenderChanged, enabled);
         this._updateRenderQuality();
     }
     _updateRenderQuality () {
-        if (this._skinId !== null) {
-            const skinWithSkinId = this._allSkins[this._skinId];
+        // if (this._skinId !== null) {
+        if (this._penSkinId !== null) {
+            // const skinWithSkinId = this._allSkins[this._skinId];
+            const skinWithSkinId = this._allSkins[this._penSkinId];
             if (skinWithSkinId) {
-                if (this._highQualityRenderer) {
+                // if (this._highQualityRenderer) {
+                if (this.useHighQualityRender) {
                     skinWithSkinId.setRenderQuality(this.canvas.width / this._nativeSize[0]);
                 } else {
                     skinWithSkinId.setRenderQuality(1);
@@ -301,27 +322,37 @@ class RenderWebGL extends EventEmitter {
         }
         for (const drawable of this._allDrawables) {
             if (drawable) {
-                drawable.setHighQuality(this._highQualityRenderer);
+                // drawable.setHighQuality(this._highQualityRenderer);
+                drawable.setHighQuality(this.useHighQualityRender);
             }
         }
     }
 
     /**
      * Configure whether the renderer should let projects access private skins.
-     * @param {boolean} privateSkinAccessEnabled Whether projects can access private skins or not.
+     * @param {boolean} allowPrivateSkinAccess Whether projects can access private skins or not.
      */
-    setPrivateSkinAccess (privateSkinAccessEnabled) {
-        this._privateSkinAccessEnabled = privateSkinAccessEnabled;
-        this.emit(RenderConstants.Events.PrivateSkinAccessChanged, privateSkinAccessEnabled);
+    // setPrivateSkinAccess (privateSkinAccessEnabled) {
+    setPrivateSkinAccess (allowPrivateSkinAccess) {
+        // this._privateSkinAccessEnabled = privateSkinAccessEnabled;
+        this.allowPrivateSkinAccess = allowPrivateSkinAccess;
+        // this.emit(RenderConstants.Events.PrivateSkinAccessChanged, privateSkinAccessEnabled);
+        // !!! CHANGE !!!
+        this.emit(RenderConstants.Events.AllowPrivateSkinAccessChanged, allowPrivateSkinAccess);
     }
 
     /**
      * Change the default (suggested) maximum texture dimension; should be set before any skins are created.
-     * @param {number} upperLimit New upper limit of texture dimension (in texels).
+     * @param {number} newMax New upper limit of texture dimension (in texels).
      */
-    setTextureDimensionUpperLimit (upperLimit) {
-        const hardwareTextureSizeLimitation = this._gl.getParameter(this._gl.MAX_TEXTURE_SIZE);
-        this._textureDimensionUpperLimit = Math.min(upperLimit, hardwareTextureSizeLimitation);
+    // !!! CHANGE !!!
+    // setTextureDimensionUpperLimit (upperLimit) {
+        setMaxTextureDimension (newMax) {
+        // !!! CHANGE !!!
+        // const hardwareTextureSizeLimitation = this._gl.getParameter(this._gl.MAX_TEXTURE_SIZE);
+        const hardwareLimit = this._gl.getParameter(this._gl.MAX_TEXTURE_SIZE);
+        // this._textureDimensionUpperLimit = Math.min(upperLimit, hardwareTextureSizeLimitation);
+        this.maxTextureDimension = Math.min(newMax, hardwareLimit);
     }
 
     /**
@@ -356,9 +387,10 @@ class RenderWebGL extends EventEmitter {
             canvas.width = newWidth;
             canvas.height = newHeight;
             // Resizing the canvas causes it to be cleared, so redraw it.
-            this._dirty = true;
+            // this._dirty = true;
+            this.dirty = true;
             this.draw();
-            
+
             this._updateRenderQuality();
         }
 
@@ -372,7 +404,8 @@ class RenderWebGL extends EventEmitter {
      * @param {number} blue The blue component for the background.
      */
     setBackgroundColor (red, green, blue) {
-        this._dirty = true;
+        // this._dirty = true;
+        this.dirty = true;
 
         this._backgroundColor4f[0] = red;
         this._backgroundColor4f[1] = green;
@@ -478,7 +511,8 @@ class RenderWebGL extends EventEmitter {
         const skinId = this._nextSkinId++;
         const newSkin = new PenSkin(skinId, this);
         this._allSkins[skinId] = newSkin;
-        this._skinId = skinId;
+        // this._skinId = skinId;
+        this._penSkinId = skinId;
         this._updateRenderQuality();
         return skinId;
     }
@@ -592,7 +626,8 @@ class RenderWebGL extends EventEmitter {
         const drawable = new Drawable(drawableID, this);
         this._allDrawables[drawableID] = drawable;
         this._addToDrawList(drawableID, group);
-        drawable.setHighQuality(this._highQualityRenderer);        
+        // drawable.setHighQuality(this._highQualityRenderer);
+        drawable.setHighQuality(this.useHighQualityRender);
 
         drawable.skin = null;
 
@@ -617,7 +652,7 @@ class RenderWebGL extends EventEmitter {
             return;
         }
         skinWithSkinId._private = true;
-    }    
+    }
 
     /**
      * Set the layer group ordering for the renderer.
@@ -679,7 +714,8 @@ class RenderWebGL extends EventEmitter {
             log.warn('Cannot destroy drawable without known layer group.');
             return;
         }
-        this._dirty = true;
+        // this._dirty = true;
+        this.dirty = true;
         const drawable = this._allDrawables[drawableID];
         drawable.dispose();
         delete this._allDrawables[drawableID];
@@ -735,7 +771,8 @@ class RenderWebGL extends EventEmitter {
             return;
         }
 
-        this._dirty = true;
+        // this._dirty = true;
+        this.dirty = true;
         const currentLayerGroup = this._layerGroups[group];
         const startIndex = currentLayerGroup.drawListOffset;
         const endIndex = this._endIndexForKnownLayerGroup(currentLayerGroup);
@@ -775,13 +812,19 @@ class RenderWebGL extends EventEmitter {
         return null;
     }
 
-    eventSkinAltered (alteredSkin) {
-        // ???
+    // !!! CHANGE !!!
+    // eventSkinAltered (alteredSkin) {
+    skinWasAltered (skin) {
+        // !!! 'hot function' (exact meaning by this and consequences / what to do (if))? ???
         // This is very hot function.
         for (let i = 0; i < this._allDrawables.length; i++) {
-            const drawableI = this._allDrawables[i];
-            if (drawableI && drawableI._skin === alteredSkin) {
-                drawableI._eventSkinAltered();
+            // !!! CHANGE !!!
+            // const drawableI = this._allDrawables[i];
+            const drawable = this._allDrawables[i];
+            // if (drawableI && drawableI._skin === alteredSkin) {
+            if (drawable && drawable._skin === skin) {
+                // drawableI._eventSkinAltered();
+                drawable._skinWasAltered();
             }
         }
     }
@@ -790,10 +833,12 @@ class RenderWebGL extends EventEmitter {
      * Draw all current drawables and present the frame on the canvas.
      */
     draw () {
-        if (!this._dirty) {
+        // if (!this._dirty) {
+        if (!this.dirty) {
             return;
         }
-        this._dirty = false;
+        // this._dirty = false;
+        this.dirty = false;
 
         this._doExitDrawRegion();
 
@@ -814,7 +859,8 @@ class RenderWebGL extends EventEmitter {
             const snapshot = gl.canvas.toDataURL();
             this._snapshotCallbacks.forEach(cb => cb(snapshot));
             this._snapshotCallbacks = [];
-            this._dirty = true;
+            // this._dirty = true;
+            this.dirty = true;
         }
     }
 
@@ -1493,7 +1539,8 @@ class RenderWebGL extends EventEmitter {
 
         // Limit queries to the stage size.
         bounds.clamp(this._xLeft, this._xRight, this._yBottom, this._yTop);
-        if (!this._offscreenTouching) {
+        // if (!this._offscreenTouching) {
+        if (!this.offscreenTouching) {
             bounds.clamp(this._xLeft, this._xRight, this._yBottom, this._yTop);
         }
 
@@ -1514,7 +1561,8 @@ class RenderWebGL extends EventEmitter {
         const drawableWithDrawableID = this._allDrawables[drawableID];
         if (!drawableWithDrawableID.skin || !drawableWithDrawableID.skin.getTexture([100, 100])) return null;
         const fastBounds = drawableWithDrawableID.getFastBounds();
-        if (!this._offscreenTouching) {
+        // if (!this._offscreenTouching) {
+        if (!this.offscreenTouching) {
             fastBounds.clamp(this._xLeft, this._xRight, this._yBottom, this._yTop);
         }
         if (fastBounds.width === 0 || fastBounds.height === 0) {
@@ -1544,7 +1592,8 @@ class RenderWebGL extends EventEmitter {
                 // Text bubbles aren't considered in "touching" queries
                 if (drawable.skin instanceof TextBubbleSkin) continue;
                 if (drawable.skin && drawable._visible) {
-                    if (!this._privateSkinAccessEnabled && drawable.skin._private) continue;
+                    // if (!this._privateSkinAccessEnabled && drawable.skin._private) continue;
+                    if (!this.allowPrivateSkinAccess && drawable.skin._private) continue;
                     // Update the CPU position data
                     drawable.updateCPURenderAttributes();
                     const candidateBounds = drawable.getFastBounds();
@@ -1735,7 +1784,9 @@ class RenderWebGL extends EventEmitter {
      * @param {int} penSkinID - the unique ID of a Pen Skin.
      */
     penClear (penSkinID) {
-        this._dirty = true;
+        // !!! CHANGE !!!
+        // this._dirty = true;
+        this.dirty = true;
         const skin = /** @type {PenSkin} */ this._allSkins[penSkinID];
         skin.clear();
     }
@@ -1748,7 +1799,8 @@ class RenderWebGL extends EventEmitter {
      * @param {number} y - the Y coordinate of the point to draw.
      */
     penPoint (penSkinID, penAttributes, x, y) {
-        this._dirty = true;
+        // this._dirty = true;
+        this.dirty = true;
         const skin = /** @type {PenSkin} */ this._allSkins[penSkinID];
         skin.drawPoint(penAttributes, x, y);
     }
@@ -1763,7 +1815,8 @@ class RenderWebGL extends EventEmitter {
      * @param {number} y1 - the Y coordinate of the end of the line.
      */
     penLine (penSkinID, penAttributes, x0, y0, x1, y1) {
-        this._dirty = true;
+        // this._dirty = true;
+        this.dirty = true;
         const skin = /** @type {PenSkin} */ this._allSkins[penSkinID];
         skin.drawLine(penAttributes, x0, y0, x1, y1);
     }
@@ -1774,7 +1827,8 @@ class RenderWebGL extends EventEmitter {
      * @param {int} stampID - the unique ID of the Drawable to use as the stamp.
      */
     penStamp (penSkinID, stampID) {
-        this._dirty = true;
+        // this._dirty = true;
+        this.dirty = true;
         const stampDrawable = this._allDrawables[stampID];
         if (!stampDrawable) {
             return;
@@ -1868,7 +1922,8 @@ class RenderWebGL extends EventEmitter {
      * @private
      */
     onNativeSizeChanged (event) {
-        this._dirty = true;
+        // this._dirty = true;
+        this.dirty = true;
         const [width, height] = event.newSize;
 
         const gl = this._gl;
@@ -2201,7 +2256,8 @@ class RenderWebGL extends EventEmitter {
      * @param {snapshotCallback} callback Function called in the next frame with the snapshot data
      */
     requestSnapshot (callback) {
-        this._dirty = true;
+        // this._dirty = true;
+        this.dirty = true;
         this._snapshotCallbacks.push(callback);
     }
 }

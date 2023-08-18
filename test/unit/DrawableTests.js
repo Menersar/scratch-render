@@ -27,8 +27,12 @@ const snapToNearest = function (rect, decimals = 3) {
 };
 
 const mockRenderer = drawable => ({
-    eventSkinAltered: () => {
-        drawable._eventSkinAltered();
+    // !!! CHANGE !!!
+    // eventSkinAltered: () => {
+    //     drawable._eventSkinAltered();
+    // }
+    skinWasAltered: () => {
+        drawable._skinWasAltered();
     }
 });
 

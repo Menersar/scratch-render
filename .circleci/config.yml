@@ -95,7 +95,7 @@ workflows:
     when:
       not:
         or:
-          - equal: [ master, <<pipeline.git.branch>> ]
+          - equal: [ sidekick, <<pipeline.git.branch>> ]
           - equal: [ develop, <<pipeline.git.branch>> ]
           - matches: { pattern: "^hotfix.*", value: <<pipeline.git.branch>> }
           - matches: { pattern: "^release.*", value: <<pipeline.git.branch>> }
@@ -105,7 +105,7 @@ workflows:
   deploy-workflow:
     when:
       or:
-        - equal: [ master, <<pipeline.git.branch>> ]
+        - equal: [ sidekick, <<pipeline.git.branch>> ]
         - equal: [ develop, <<pipeline.git.branch>> ]
         - matches: { pattern: "^hotfix.*", value: <<pipeline.git.branch>> }
         - matches: { pattern: "^release.*", value: <<pipeline.git.branch>> }

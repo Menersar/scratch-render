@@ -12,7 +12,9 @@ class MockSkin extends Skin {
     set rotationCenter (center) {
         this._rotationCenter[0] = center[0];
         this._rotationCenter[1] = center[1];
-        this.eventSkinAltered();
+        // !!! CHANGE !!!
+        // this.eventSkinAltered();
+        this.emitWasAltered();
     }
 
     get rotationCenter () {

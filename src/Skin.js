@@ -49,7 +49,7 @@ class Skin {
          */
         this._silhouette = new Silhouette();
 
-        this._private = false;        
+        this._private = false;
     }
 
     /**
@@ -133,10 +133,14 @@ class Skin {
         return this._uniforms;
     }
 
-    eventSkinAltered () {
-        this._renderer.eventSkinAltered(this);
-    }    
-    
+    // !!! CHANGE !!!
+    // eventSkinAltered () {
+    //     this._renderer.eventSkinAltered(this);
+    // }
+    emitWasAltered () {
+        this._renderer.skinWasAltered(this);
+    }
+
     /**
      * If the skin defers silhouette operations until the last possible minute,
      * this will be called before isTouching uses the silhouette.
@@ -194,7 +198,9 @@ class Skin {
         this._rotationCenter[1] = 0;
 
         this._silhouette.update(this._emptyImageData);
-        this.eventSkinAltered();
+        // !!! CHANGE !!!
+        // this.eventSkinAltered();
+        this.emitWasAltered();
     }
 
     /**

@@ -198,6 +198,7 @@ class SVGSkin extends Skin {
         this._svgImageLoaded = false;
 
         const {x, y, width, height} = svgTag.viewBox.baseVal;
+        // ??? !!!
         // While we're setting the size before the image is loaded, this doesn't cause the skin to appear with the wrong
         // size for a few frames while the new image is loading, because we don't emit the `WasAltered` event, telling
         // drawables using this skin to update, until the image is loaded.
@@ -214,9 +215,13 @@ class SVGSkin extends Skin {
             }
 
             const maxDimension = Math.ceil(Math.max(width, height));
-            const textureDimensionUpperLimit = this._renderer._textureDimensionUpperLimit;
+            // !!! CHANGE !!!
+            // const textureDimensionUpperLimit = this._renderer._textureDimensionUpperLimit;
+            const rendererMax = this._renderer.maxTextureDimension;
             let testScale = 2;
-            for (testScale; maxDimension * testScale <= textureDimensionUpperLimit; testScale *= 2) {
+            // !!! CHANGE !!!
+            // for (testScale; maxDimension * testScale <= textureDimensionUpperLimit; testScale *= 2) {
+            for (testScale; maxDimension * testScale <= rendererMax; testScale *= 2) {
                 this._maxTextureScale = testScale;
             }
 
@@ -230,7 +235,9 @@ class SVGSkin extends Skin {
 
             this._svgImageLoaded = true;
 
-            this.eventSkinAltered();
+            // !!! CHANGE !!!
+            // this.eventSkinAltered();
+            this.emitWasAltered();
         };
 
         this._svgImage.src = `data:image/svg+xml;utf8,${encodeURIComponent(svgText)}`;

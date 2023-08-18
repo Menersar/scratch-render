@@ -32,7 +32,7 @@ const __premultipliedColor = [0, 0, 0, 0];
         // Array of 32-bit floating point numbers.
 
 // Conversion and scaling of an Float32Array to Int16Array: Scaling with range 1 to -1 in Float32Array --> becomes 32767 and -32768 in Int16Array (source: https://stackoverflow.com/questions/25839216/convert-float32array-to-int16array)
-// Contant for flushing if buffer would overflow. 
+// Contant for flushing if buffer would overflow.
 // Detecting size of a_color with .length is very slow in some browsers. Performance improvement: Comparing to a constant (ARRAY_BUFFER_POINT_COLOR).
 const ARRAY_BUFFER_POINT_COLOR = 65534;
 const ARRAY_BUFFER_POSTION_DIMENSION = 32767;
@@ -137,7 +137,7 @@ class PenSkin extends Skin {
         this._drawingBufferDrawRegionId = {
             enter: () => this._enterDrawingBuffer(),
             exit: () => this._exitDrawingBuffer()
-        };        
+        };
 
         this.onNativeSizeChanged = this.onNativeSizeChanged.bind(this);
         this._renderer.on(RenderConstants.Events.NativeSizeChanged, this.onNativeSizeChanged);
@@ -229,7 +229,7 @@ class PenSkin extends Skin {
      */
     _enterDrawLineOnBuffer () {
         this._resetAttributeIndexes();
- 
+
         const gl = this._renderer.gl;
 
         twgl.bindFramebufferInfo(gl, this._framebuffer);
@@ -389,12 +389,12 @@ class PenSkin extends Skin {
             this.a_indexDimension = 0;
             this.a_IndexPoint = 0;
         }
-    
+
         _flushLines () {
             const gl = this._renderer.gl;
-    
+
             const currentShader = this._lineShader;
-            
+
             // !!
             // If only a small amount of data needs to be uploaded, only upload part of the data.
             // todo: need to see if this helps and fine tune this number
@@ -434,7 +434,7 @@ class PenSkin extends Skin {
                     this.a_dimension
                 );
             }
-            // !!!            
+            // !!!
             // todo: if we skip twgl and do all this buffer stuff ourselves, we can skip some unneeded gl calls
             twgl.setBuffersAndAttributes(gl, currentShader, this._lineBufferInfo);
 
@@ -455,10 +455,11 @@ class PenSkin extends Skin {
             event.newSize[0] * this._renderQuality,
             event.newSize[1] * this._renderQuality
         ]);
-        this.eventSkinAltered();
+        // this.eventSkinAltered();
+        this.emitWasAltered();
     }
 
-    /** 
+    /**
      * Set the size of the pen canvas.
      * @param {Array<int>} canvasDimensions - the new width and height for the canvas.
      * @private
@@ -468,7 +469,7 @@ class PenSkin extends Skin {
 
         if (this._size && this._size[0] === width && this._size[1] === height) {
             return;
-        }        
+        }
 
         this._size = canvasDimensions;
         // tw: use native size for Drawable positioning logic
@@ -496,7 +497,7 @@ class PenSkin extends Skin {
                 attachment: this._texture
             }
         ];
-        
+
         if (this._framebuffer) {
             this._framebuffer = twgl.createFramebufferInfo(gl, attachments, width, height);
         } else {

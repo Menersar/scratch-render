@@ -124,15 +124,26 @@ class Drawable {
         this._transformedHullPoints = null;
         this._transformedHullDirty = true;
 
-        this._eventSkinAltered = this._eventSkinAltered.bind(this);
+        // !!! CHANGE !!!
+        // this._eventSkinAltered = this._eventSkinAltered.bind(this);
+        this._skinWasAltered = this._skinWasAltered.bind(this);
 
         this.isTouching = this._isTouchingNever;
 
-        this._highQualityEnabled = false;
+
+        // !!! CHANGE !!!
+        // this._highQualityEnabled = false;
+        this._highQuality = false;
+
+
     }
 
-    setHighQuality (highQualityEnabled) {
-        this._highQualityEnabled = highQualityEnabled;
+    // !!! CHANGE !!!
+    // setHighQuality (highQualityEnabled) {
+    //     this._highQualityEnabled = highQualityEnabled;
+    // }
+    setHighQuality (highQuality) {
+        this._highQuality = highQuality;
     }
 
     /**
@@ -173,7 +184,8 @@ class Drawable {
     set skin (newSkin) {
         if (this._skin !== newSkin) {
             this._skin = newSkin;
-            this._eventSkinAltered();
+            // this._eventSkinAltered();
+            this._skinWasAltered();
         }
     }
 
@@ -207,15 +219,21 @@ class Drawable {
      */
     updatePosition (position) {
         if (this._position[0] !== position[0] ||
-            this._position[1] !== position[1]) {
-            if (this._highQualityEnabled) {
+            this._position[1] !== position[1]
+        ) {
+
+
+            // !!! CHANGE !!!
+            // if (this._highQualityEnabled) {
+            if (this._highQuality) {
                 this._position[0] = position[0];
                 this._position[1] = position[1];
             } else {
                 this._position[0] = Math.round(position[0]);
                 this._position[1] = Math.round(position[1]);
             }
-            this._renderer._dirty = true;
+            // this._renderer._dirty = true;
+            this._renderer.dirty = true;
             this.setTransformDirty();
         }
     }
@@ -227,7 +245,8 @@ class Drawable {
     updateDirection (direction) {
         if (this._direction !== direction) {
             this._direction = direction;
-            this._renderer._dirty = true;
+            // this._renderer._dirty = true;
+            this._renderer.dirty = true;
             this._rotationTransformDirty = true;
             this.setTransformDirty();
         }
@@ -242,7 +261,8 @@ class Drawable {
             this._scale[1] !== scale[1]) {
             this._scale[0] = scale[0];
             this._scale[1] = scale[1];
-            this._renderer._dirty = true;
+            // this._renderer._dirty = true;
+            this._renderer.dirty = true;
             this._rotationCenterDirty = true;
             this._skinScaleDirty = true;
             this.setTransformDirty();
@@ -256,7 +276,8 @@ class Drawable {
     updateVisible (visible) {
         if (this._visible !== visible) {
             this._visible = visible;
-            this._renderer._dirty = true;
+            // this._renderer._dirty = true;
+            this._renderer.dirty = true;
             this.setConvexHullDirty();
         }
     }
@@ -267,7 +288,8 @@ class Drawable {
      * @param {number} rawValue A new effect value.
      */
     updateEffect (effectName, rawValue) {
-        this._renderer._dirty = true;
+        // this._renderer._dirty = true;
+        this._renderer.dirty = true;
         const effectInfo = ShaderManager.EFFECT_INFO[effectName];
         if (rawValue) {
             this.enabledEffects |= effectInfo.mask;
@@ -671,8 +693,10 @@ class Drawable {
     /**
      * Respond to an internal change in the current Skin.
      */
-    _eventSkinAltered () {
-        this._renderer._dirty = true;
+    // _eventSkinAltered () {
+    _skinWasAltered () {
+        // this._renderer._dirty = true;
+        this._renderer.dirty = true;
         this._rotationCenterDirty = true;
         this._skinScaleDirty = true;
         this.setConvexHullDirty();

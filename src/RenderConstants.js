@@ -18,19 +18,23 @@ module.exports = {
     //  */
     // SKIN_SHARE_SOFT_LIMIT: 301,
 
+    // !!! CHANGE !!!
     /**
      * @enum {string}
      */
     Events: {
         /**
-         * HighQualityRendererChanged event
+         * UseHighQualityRenderChanged event
          */
-        HighQualityRendererChanged: 'HighQualityRendererChanged',
+        // HighQualityRendererChanged: 'HighQualityRendererChanged',
+        UseHighQualityRenderChanged: 'UseHighQualityRenderChanged',
 
+        // !!! CHANGE !!!
         /**
-         * PrivateSkinAccessChanged event
+         * AllowPrivateSkinAccessChanged event
          */
-        PrivateSkinAccessChanged: 'PrivateSkinAccessChanged',
+        // PrivateSkinAccessChanged: 'PrivateSkinAccessChanged',
+        AllowPrivateSkinAccessChanged: 'AllowPrivateSkinAccessChanged',
 
         /**
          * NativeSizeChanged event
