@@ -49,7 +49,9 @@ class Skin {
          */
         this._silhouette = new Silhouette();
 
-        this._private = false;
+        // !!! CHANGE !!!
+        // this._private = false;
+        this.private = false;
     }
 
     /**

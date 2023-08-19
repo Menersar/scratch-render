@@ -310,13 +310,16 @@ class RenderWebGL extends EventEmitter {
         // if (this._skinId !== null) {
         if (this._penSkinId !== null) {
             // const skinWithSkinId = this._allSkins[this._skinId];
-            const skinWithSkinId = this._allSkins[this._penSkinId];
-            if (skinWithSkinId) {
+            const skin = this._allSkins[this._penSkinId];
+            // if (skinWithSkinId) {
+            if (skin) {
                 // if (this._highQualityRenderer) {
                 if (this.useHighQualityRender) {
-                    skinWithSkinId.setRenderQuality(this.canvas.width / this._nativeSize[0]);
+                    // skinWithSkinId.setRenderQuality(this.canvas.width / this._nativeSize[0]);
+                    skin.setRenderQuality(this.canvas.width / this._nativeSize[0]);
                 } else {
-                    skinWithSkinId.setRenderQuality(1);
+                    // skinWithSkinId.setRenderQuality(1);
+                    skin.setRenderQuality(1);
                 }
             }
         }
@@ -646,12 +649,18 @@ class RenderWebGL extends EventEmitter {
      * Flag Skin as private.
      * @param {number} skinID ID of the Skin.
      */
-    setSkinToPrivate (skinID) {
-        const skinWithSkinId = this._allSkins[skinID];
-        if (!skinWithSkinId) {
+    // !!! CHANGE !!!
+    // setSkinToPrivate (skinID) {
+    markSkinAsPrivate (skinID) {
+        // !!! CHANGE !!!
+        // const skinWithSkinId = this._allSkins[skinID];
+        const skin = this._allSkins[skinID];
+        // if (!skinWithSkinId) {
+        if (!skin) {
             return;
         }
-        skinWithSkinId._private = true;
+        // skinWithSkinId._private = true;
+        skin.private = true;
     }
 
     /**
@@ -849,16 +858,22 @@ class RenderWebGL extends EventEmitter {
         gl.clearColor(...this._backgroundColor4f);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        const snapshotCallback = this._snapshotCallbacks.length > 0;
+        // !!! CHANGE !!!
+        // const snapshotCallback = this._snapshotCallbacks.length > 0;
+        const snapshotRequested = this._snapshotCallbacks.length > 0;
         this._drawThese(this._drawList, ShaderManager.DRAW_MODE.default, this._projection, {
             framebufferWidth: gl.canvas.width,
             framebufferHeight: gl.canvas.height,
-            isPrivateSkin: snapshotCallback
+            // !!! CHANGE !!!
+            // isPrivateSkin: snapshotCallback
+            skipPrivateSkins: snapshotRequested
         });
-        if (snapshotCallback) {
+        // if (snapshotCallback) {
+        if (snapshotRequested) {
             const snapshot = gl.canvas.toDataURL();
             this._snapshotCallbacks.forEach(cb => cb(snapshot));
             this._snapshotCallbacks = [];
+            // !!! Add explanation / Comment here? ???
             // this._dirty = true;
             this.dirty = true;
         }
@@ -1421,6 +1436,7 @@ class RenderWebGL extends EventEmitter {
             gl.clear(gl.COLOR_BUFFER_BIT);
             this._drawThese([drawableID], ShaderManager.DRAW_MODE.straightAlpha, projection,
                 {
+                    // ??? What?, 'TODO'? !!!
                     // Don't apply the ghost effect. TODO: is this an intentional design decision?
                     effectMask: ~ShaderManager.EFFECT_INFO.ghost.mask,
                     // We're doing this in screen-space, so the framebuffer dimensions should be those of the canvas in
@@ -1449,6 +1465,7 @@ class RenderWebGL extends EventEmitter {
                 width: canvasSpaceBounds.width * ratio,
                 height: canvasSpaceBounds.height * ratio
             };
+            // ??? 'finally'? !!!
         } finally {
             gl.deleteFramebuffer(bufferInfo.framebuffer);
         }
@@ -1593,7 +1610,10 @@ class RenderWebGL extends EventEmitter {
                 if (drawable.skin instanceof TextBubbleSkin) continue;
                 if (drawable.skin && drawable._visible) {
                     // if (!this._privateSkinAccessEnabled && drawable.skin._private) continue;
-                    if (!this.allowPrivateSkinAccess && drawable.skin._private) continue;
+                    if (!this.allowPrivateSkinAccess && drawable.skin.private) continue;
+
+                    // !!! 'Abs.', etc.? ???
+
                     // Update the CPU position data
                     drawable.updateCPURenderAttributes();
                     const candidateBounds = drawable.getFastBounds();
@@ -1847,33 +1867,49 @@ class RenderWebGL extends EventEmitter {
         twgl.bindFramebufferInfo(gl, skin._framebuffer);
 
         // Limit size of viewport to the bounds around the stamp Drawable and create the projection matrix for the draw.
-        const renderQuality = skin._renderQuality;
-        bounds.left *= renderQuality;
-        bounds.right *= renderQuality;
-        bounds.top *= renderQuality;
-        bounds.bottom *= renderQuality;
+        // !!! CHANGE !!!
+        // const renderQuality = skin._renderQuality;
+        const quality = skin.renderQuality;
+        // bounds.left *= renderQuality;
+        bounds.left *= quality;
+        // bounds.right *= renderQuality;
+        bounds.right *= quality;
+        // bounds.top *= renderQuality;
+        bounds.top *= quality;
+        // bounds.bottom *= renderQuality;
+        bounds.bottom *= quality;
         bounds.snapToInt();
         gl.viewport(
-            (this._nativeSize[0] * 0.5 * renderQuality) + bounds.left,
-            (this._nativeSize[1] * 0.5 * renderQuality) - bounds.top,
+            // (this._nativeSize[0] * 0.5 * renderQuality) + bounds.left,
+            (this._nativeSize[0] * 0.5 * quality) + bounds.left,
+            // (this._nativeSize[1] * 0.5 * renderQuality) - bounds.top,
+            (this._nativeSize[1] * 0.5 * quality) - bounds.top,
             bounds.width,
             bounds.height
         );
         const projection = twgl.m4.ortho(
             // Convert snapped "screen-space" back to "stage-space" for rendering.
-            bounds.left / renderQuality,
-            bounds.right / renderQuality,
-            bounds.top / renderQuality,
-            bounds.bottom / renderQuality,
+            // bounds.left / renderQuality,
+            bounds.left / quality,
+            // bounds.right / renderQuality,
+            bounds.right / quality,
+            // bounds.top / renderQuality,
+            bounds.top / quality,
+            // bounds.bottom / renderQuality,
+            bounds.bottom / quality,
             -1,
             1
         );
 
+        // !!! ???
         // Draw the stamped sprite onto the PenSkin's framebuffer.
         this._drawThese([stampID], ShaderManager.DRAW_MODE.default, projection, {
+            // !!! 'ignoreVisibility'? ???
             ignoreVisibility: true,
-            framebufferWidth: this._nativeSize[0] * renderQuality,
-            framebufferHeight: this._nativeSize[1] * renderQuality
+            // framebufferWidth: this._nativeSize[0] * renderQuality,
+            framebufferWidth: this._nativeSize[0] * quality,
+            // framebufferHeight: this._nativeSize[1] * renderQuality
+            framebufferHeight: this._nativeSize[1] * quality
         });
         skin._silhouetteDirty = true;
     }
@@ -1993,7 +2029,7 @@ class RenderWebGL extends EventEmitter {
      * @param {boolean} opts.ignoreVisibility Draw all, despite visibility (e.g. stamping, touching color)
      * @param {int} opts.framebufferWidth The width of the framebuffer being drawn onto. Defaults to "native" width
      * @param {int} opts.framebufferHeight The height of the framebuffer being drawn onto. Defaults to "native" height
-     * @param {boolean} opts.isPrivateSkin  Draw no Skins flagged as a private Skin.
+     * @param {boolean} opts.skipPrivateSkins  Draw no Skins flagged as a private Skin.
      * @private
      */
     _drawThese (drawables, drawMode, projection, opts = {}) {
@@ -2020,8 +2056,11 @@ class RenderWebGL extends EventEmitter {
             // the ignoreVisibility flag is used (e.g. for stamping or touchingColor).
             if (!drawable.getVisible() && !opts.ignoreVisibility) continue;
 
+            // !!! ???
             // Skip private skins, if requested.
-            if (opts.isPrivateSkin && drawable.skin._private) continue;
+            // !!! CHANGE !!!
+            // if (opts.isPrivateSkin && drawable.skin._private) continue;
+            if (opts.skipPrivateSkins && drawable.skin.private) continue;
 
             // drawableScale is the "framebuffer-pixel-space" scale of the drawable, as percentages of the drawable's
             // "native size" (so 100 = same as skin's "native size", 200 = twice "native size").
@@ -2247,6 +2286,7 @@ class RenderWebGL extends EventEmitter {
         return dst;
     }
 
+    // !!! '#'? ???
     /**
      * @callback RenderWebGL#snapshotCallback
      * @param {string} dataURI Data URI of the snapshot of the renderer
