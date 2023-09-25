@@ -101,20 +101,12 @@ class SVGSkin extends Skin {
      * @return {SVGMIP} An object that handles creating and updating SVG textures.
      */
     createMIP (scale) {
-        // !!! ???
-        // const isNewMipScaleLargestMipScale = this._largestMIPScale < scale;
-        // if (!isNewMipScaleLargestMipScale) {
-        //     this._silhouette.unlazy();
-        // }
         const isLargestMIP = this._largestMIPScale < scale;
-        // Silhouette reads image data lazily from `<canvas>`, however:
-        // That canvas is shared between the Skin and Silhouette, so:
-        // Changing here can mess up Silhouette.
-        // To prevent that:
-        // Force the Silhouette to synchronously read the image data before we mutate the canvas, unless:
-        // The new MIP is the largest MIP.
-        // In that  case, it is unnecessary doing so, as:
-        // The silhouette gets updated later anyways.
+        // TW: Silhouette will lazily read image data from our <canvas>. However, this canvas is shared
+        // between the Skin and Silhouette so changing it here can mess up Silhouette. To prevent that,
+        // we will force the silhouette to synchronously read the image data before we mutate the
+        // canvas, unless the new MIP is the largest MIP, in which case doing so is unnecessary as we
+        // will update the silhouette later anyways.
         if (!isLargestMIP) {
             this._silhouette.unlazy();
         }
@@ -136,11 +128,8 @@ class SVGSkin extends Skin {
         this._context.setTransform(scale, 0, 0, scale, 0, 0);
         this._context.drawImage(this._svgImage, 0, 0);
 
-        // Pull out the 'ImageData' from the canvas.
-        // 'ImageData' speeds up updating Silhouette and is better handled by more browsers regarding memory.
-        // Optimization: Slow reading of image data from `<canvas>`; causes:
-        // Animation stuttering, so:
-        // Use the canvas directly.
+        // TW: Reading image data from <canvas> is very slow and causes animations to stutter,
+        // so we just use the canvas directly instead.
         const textureData = this._canvas;
 
         const textureOptions = {
@@ -153,8 +142,6 @@ class SVGSkin extends Skin {
         const mip = twgl.createTexture(this._renderer.gl, textureOptions);
 
         // Check if this is the largest MIP created so far. Currently, silhouettes only get scaled up.
-        // !!! ???
-        // if (isNewMipScaleLargestMipScale) {
         if (isLargestMIP) {
             this._silhouette.update(textureData);
             this._largestMIPScale = scale;
@@ -211,13 +198,10 @@ class SVGSkin extends Skin {
      */
     setSVG (svgData, rotationCenter) {
         const svgTag = loadSvgString(svgData);
-        // !!! 'true /* shouldInjectFonts */', remove / comment out, etc.(?!)? ???
-        // const svgText = serializeSvgToString(svgTag, true /* shouldInjectFonts */);
         const svgText = serializeSvgToString(svgTag, this._renderer.customFonts);
         this._svgImageLoaded = false;
 
         const {x, y, width, height} = svgTag.viewBox.baseVal;
-        // ??? !!!
         // While we're setting the size before the image is loaded, this doesn't cause the skin to appear with the wrong
         // size for a few frames while the new image is loading, because we don't emit the `WasAltered` event, telling
         // drawables using this skin to update, until the image is loaded.
@@ -234,12 +218,8 @@ class SVGSkin extends Skin {
             }
 
             const maxDimension = Math.ceil(Math.max(width, height));
-            // !!! CHANGE !!!
-            // const textureDimensionUpperLimit = this._renderer._textureDimensionUpperLimit;
             const rendererMax = this._renderer.maxTextureDimension;
             let testScale = 2;
-            // !!! CHANGE !!!
-            // for (testScale; maxDimension * testScale <= textureDimensionUpperLimit; testScale *= 2) {
             for (testScale; maxDimension * testScale <= rendererMax; testScale *= 2) {
                 this._maxTextureScale = testScale;
             }
@@ -254,8 +234,6 @@ class SVGSkin extends Skin {
 
             this._svgImageLoaded = true;
 
-            // !!! CHANGE !!!
-            // this.eventSkinAltered();
             this.emitWasAltered();
         };
 
